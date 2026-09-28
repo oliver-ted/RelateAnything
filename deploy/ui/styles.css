@@ -1,0 +1,400 @@
+/* ==========================================================================
+   Aether design tokens. Defined once; everything below references them.
+   ========================================================================== */
+:root {
+  /* brand */
+  --ae-brand: #1B3A2B;
+  --ae-accent: #2F6B4F;
+  --ae-accent-hover: #265840;
+  --ae-accent-soft: rgba(47, 107, 79, 0.12);
+
+  /* neutrals */
+  --ae-bg: #F6F7F6;
+  --ae-surface: #FFFFFF;
+  --ae-surface-2: #F9FAF9;
+  --ae-surface-3: #EFF1F0;
+  --ae-border: #E3E6E4;
+  --ae-border-strong: #CDD2CF;
+  --ae-text: #1A1F1C;
+  --ae-text-muted: #666666;
+  --ae-text-subtle: #8A8F8C;
+
+  /* status */
+  --ae-success: #2F6B4F;
+  --ae-warning: #B54708;
+  --ae-danger: #B42318;
+  --ae-danger-soft: rgba(180, 35, 24, 0.08);
+  --ae-info-soft: #EFF1F0;
+
+  /* shape */
+  --ae-radius-sm: 4px;
+  --ae-radius: 6px;
+  --ae-radius-lg: 8px;
+  --ae-shadow: 0 1px 2px rgba(16, 24, 20, 0.06);
+
+  /* 8px spacing grid */
+  --ae-space-half: 4px;
+  --ae-space-1: 8px;
+  --ae-space-2: 16px;
+  --ae-space-3: 24px;
+  --ae-space-4: 32px;
+
+  /* type scale: title, section, body, caption */
+  --ae-font: "Inter", Arial, sans-serif;
+  --ae-fs-title: 22px;
+  --ae-fs-section: 15px;
+  --ae-fs-body: 14px;
+  --ae-fs-caption: 12px;
+  --ae-lh-tight: 1.3;
+  --ae-lh-body: 1.5;
+
+  --ae-header-h: 56px;
+  --ae-max-w: 1440px;
+}
+
+/* Dark mode: three surface tones separated by 1px borders. */
+.dark {
+  --ae-accent: #2F6B4F;
+  --ae-accent-hover: #3A7D5D;
+  --ae-accent-soft: rgba(86, 150, 122, 0.18);
+
+  --ae-bg: #0F1311;
+  --ae-surface: #161B18;
+  --ae-surface-2: #1C2320;
+  --ae-surface-3: #232B27;
+  --ae-border: #2A322E;
+  --ae-border-strong: #38423D;
+  --ae-text: #E7EAE8;
+  --ae-text-muted: #A3A9A6;
+  --ae-text-subtle: #7B817E;
+
+  --ae-success: #56967A;
+  --ae-warning: #E0A15A;
+  --ae-danger: #F0776B;
+  --ae-danger-soft: rgba(240, 119, 107, 0.10);
+  --ae-info-soft: #1C2320;
+  --ae-shadow: none;
+}
+
+/* ==========================================================================
+   Page chrome
+   ========================================================================== */
+body, gradio-app, .gradio-container {
+  background: var(--ae-bg) !important;
+  font-family: var(--ae-font) !important;
+  color: var(--ae-text);
+}
+.gradio-container {
+  max-width: var(--ae-max-w) !important;
+  margin: 0 auto !important;
+  padding: 0 var(--ae-space-3) var(--ae-space-4) !important;
+}
+.gradio-container, .gradio-container * {
+  font-feature-settings: "cv11", "ss01";
+}
+html, body { overflow-x: clip; }
+.gradio-container > .main, .gradio-container .main.fillable { padding: 0 !important; }
+.gradio-container .html-container { padding: 0 !important; }
+/* Message slots take no space until they hold a message. */
+.ae-collapsible:not(:has(.ae-empty)) { display: none !important; }
+/* Hide Gradio's footer ("Use via API", "Built with Gradio", settings). */
+footer, .gradio-container > footer, .built-with, .show-api { display: none !important; }
+.gradio-container .main, .gradio-container .wrap.app { gap: var(--ae-space-2); }
+
+/* Header bar */
+.ae-header-host { padding: 0 !important; border: 0 !important; background: none !important; }
+.ae-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--ae-space-2);
+  height: var(--ae-header-h);
+  /* full-bleed bar, content aligned with the page column */
+  margin: 0 calc(50% - 50vw);
+  padding: 0 calc(50vw - 50%);
+  background: var(--ae-surface);
+  border-bottom: 1px solid var(--ae-border);
+}
+.ae-header__brand { display: flex; align-items: center; gap: var(--ae-space-2); min-width: 0; }
+.ae-logo { display: inline-flex; align-items: center; height: 24px; color: var(--ae-brand); }
+.ae-logo svg, img.ae-logo { height: 24px; width: auto; display: block; }
+.dark .ae-logo { color: var(--ae-text); }
+.ae-logo--text { font-weight: 600; font-size: var(--ae-fs-section); }
+.ae-header__divider { width: 1px; height: 24px; background: var(--ae-border-strong); flex: none; }
+.ae-header__product {
+  font-size: var(--ae-fs-section); font-weight: 600; color: var(--ae-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ae-header__meta { font-size: var(--ae-fs-caption); color: var(--ae-text-muted); white-space: nowrap; }
+.ae-header__meta strong { color: var(--ae-brand); font-weight: 600; }
+.dark .ae-header__meta strong { color: var(--ae-text); }
+
+/* Page intro */
+.ae-intro { padding: var(--ae-space-3) 0 var(--ae-space-1); }
+.ae-intro__title {
+  margin: 0 0 var(--ae-space-half);
+  font-size: var(--ae-fs-title); line-height: var(--ae-lh-tight);
+  font-weight: 600; letter-spacing: -0.01em; color: var(--ae-text);
+}
+.ae-intro__subtitle {
+  margin: 0; max-width: 72ch;
+  font-size: var(--ae-fs-body); line-height: var(--ae-lh-body);
+  color: var(--ae-text-muted);
+}
+
+/* ==========================================================================
+   Layout: cards on the 8px grid
+   ========================================================================== */
+.ae-main { gap: var(--ae-space-2) !important; align-items: flex-start !important; }
+.ae-col, .ae-subrow { gap: var(--ae-space-2) !important; }
+
+.gradio-container { width: 100% !important; box-sizing: border-box; }
+.gradio-container .main, .gradio-container .wrap.app, .gradio-container main.contain,
+.ae-main, .ae-col, .ae-subrow, .ae-card { min-width: 0 !important; max-width: 100%; }
+.ae-table .table-wrap { overflow-x: auto !important; }
+
+.ae-card {
+  background: var(--ae-surface) !important;
+  border: 1px solid var(--ae-border) !important;
+  border-radius: var(--ae-radius-lg) !important;
+  box-shadow: var(--ae-shadow) !important;
+  padding: var(--ae-space-2) !important;
+  gap: var(--ae-space-2) !important;
+}
+/* Components inside a card sit flat on it. */
+.ae-card .block, .ae-card .form, .ae-card .gr-group {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+.ae-card .form { gap: var(--ae-space-2) !important; }
+.ae-card .html-container, .ae-card .prose { padding: 0 !important; }
+
+/* Section headings */
+.ae-section { display: flex; flex-direction: column; gap: var(--ae-space-half); }
+.ae-section__title {
+  margin: 0 !important; padding: 0 !important; border: 0 !important;
+  font-size: var(--ae-fs-section) !important; line-height: var(--ae-lh-tight) !important;
+  font-weight: 600 !important; color: var(--ae-text) !important; letter-spacing: 0 !important;
+}
+.ae-section__caption {
+  margin: 0 !important; font-size: var(--ae-fs-caption) !important;
+  line-height: var(--ae-lh-body) !important; color: var(--ae-text-muted) !important;
+}
+
+/* ==========================================================================
+   Typography inside components
+   ========================================================================== */
+/* Field labels: plain muted text above the input, never a filled badge. */
+.ae-card label > span[data-testid="block-info"],
+.ae-card span[data-testid="block-info"],
+.ae-card .block-title, .ae-card .block-label {
+  background: none !important; border: 0 !important; box-shadow: none !important;
+  padding: 0 !important; margin: 0 0 var(--ae-space-1) !important;
+  color: var(--ae-text-muted) !important;
+  font-size: var(--ae-fs-caption) !important; font-weight: 500 !important;
+  letter-spacing: 0 !important; text-transform: none !important;
+}
+.ae-card [data-testid="block-info"] + div,
+.ae-card .info, .ae-card span.info, .ae-card div.info {
+  color: var(--ae-text-subtle) !important; font-size: var(--ae-fs-caption) !important;
+}
+.ae-card textarea, .ae-card input[type="text"], .ae-card input[type="number"] {
+  font-family: var(--ae-font) !important; font-size: var(--ae-fs-body) !important;
+  color: var(--ae-text) !important; line-height: var(--ae-lh-body) !important;
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+.gradio-container button { font-family: var(--ae-font) !important; }
+.ae-card button.primary, .ae-apply {
+  font-weight: 600 !important; font-size: var(--ae-fs-body) !important;
+  border-radius: var(--ae-radius) !important; min-height: 40px;
+}
+.ae-card button.secondary {
+  font-weight: 500 !important; font-size: var(--ae-fs-caption) !important;
+  border-radius: var(--ae-radius) !important;
+}
+.ae-card button:disabled { opacity: 0.6; cursor: progress; }
+.ae-actions { gap: var(--ae-space-1) !important; justify-content: flex-end !important; flex-wrap: wrap; }
+.ae-actions > * { flex: 0 0 auto !important; min-width: 0 !important; width: auto !important; }
+.ae-actions button { padding: 0 var(--ae-space-2) !important; min-height: 32px; }
+
+/* ==========================================================================
+   Segmented control (Radio restyled)
+   ========================================================================== */
+.ae-segmented .wrap {
+  display: inline-flex !important; flex-wrap: nowrap !important;
+  gap: 2px !important; padding: 2px !important; width: 100%;
+  background: var(--ae-surface-3) !important;
+  border: 1px solid var(--ae-border) !important;
+  border-radius: var(--ae-radius) !important;
+}
+.ae-segmented .wrap label {
+  flex: 1 1 0 !important; justify-content: center !important;
+  margin: 0 !important; padding: 6px var(--ae-space-1) !important;
+  min-height: 32px; border-radius: var(--ae-radius-sm) !important;
+  background: transparent !important; border: 1px solid transparent !important;
+  box-shadow: none !important; cursor: pointer;
+  color: var(--ae-text-muted) !important; font-size: var(--ae-fs-body) !important;
+  font-weight: 500 !important; white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ae-segmented .wrap label:hover { color: var(--ae-text) !important; }
+.ae-segmented .wrap label input { position: absolute !important; opacity: 0 !important; pointer-events: none; width: 1px; height: 1px; }
+.ae-segmented .wrap label span { margin: 0 !important; }
+.ae-segmented .wrap label.selected,
+.ae-segmented .wrap label:has(input:checked) {
+  background: var(--ae-surface) !important;
+  border-color: var(--ae-border) !important;
+  color: var(--ae-accent) !important; font-weight: 600 !important;
+  box-shadow: var(--ae-shadow) !important;
+}
+.dark .ae-segmented .wrap label.selected,
+.dark .ae-segmented .wrap label:has(input:checked) {
+  background: var(--ae-surface-2) !important; color: var(--ae-text) !important;
+  box-shadow: inset 0 -2px 0 var(--ae-success) !important;
+}
+.ae-segmented .wrap label:has(input:focus-visible) { outline: 2px solid var(--ae-accent); outline-offset: 1px; }
+
+/* ==========================================================================
+   Sliders, checkboxes
+   ========================================================================== */
+.ae-card input[type="range"] { accent-color: var(--ae-accent); }
+.ae-card input[type="checkbox"] { accent-color: var(--ae-accent); }
+.ae-card input[type="number"] {
+  border: 1px solid var(--ae-border) !important; border-radius: var(--ae-radius-sm) !important;
+  background: var(--ae-surface) !important; box-shadow: none !important;
+}
+.ae-card .reset-button { color: var(--ae-text-subtle) !important; }
+
+/* ==========================================================================
+   Images
+   ========================================================================== */
+.ae-card .image-container, .ae-card .image-frame, .ae-card [data-testid="image"] {
+  border-radius: var(--ae-radius) !important;
+}
+.ae-card .image-container {
+  background: var(--ae-surface-2) !important;
+  border: 1px solid var(--ae-border) !important;
+  overflow: hidden;
+}
+.ae-hero__image .image-container { background: var(--ae-surface-3) !important; }
+.ae-card .icon-button-wrapper, .ae-card .icon-buttons {
+  background: var(--ae-surface) !important; border: 1px solid var(--ae-border) !important;
+  border-radius: var(--ae-radius-sm) !important; box-shadow: none !important;
+}
+.ae-card .upload-container, .ae-card .wrap.center, .ae-card [data-testid="upload-container"] {
+  color: var(--ae-text-muted) !important; font-size: var(--ae-fs-body) !important;
+}
+
+/* ==========================================================================
+   Status strip
+   ========================================================================== */
+.ae-status-host { padding: 0 !important; }
+.ae-status {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--ae-space-1) var(--ae-space-3);
+  padding: var(--ae-space-1) var(--ae-space-2);
+  background: var(--ae-surface-2);
+  border: 1px solid var(--ae-border);
+  border-radius: var(--ae-radius);
+  font-size: var(--ae-fs-caption); color: var(--ae-text-muted);
+  min-height: 40px;
+}
+.ae-status__state { display: flex; align-items: center; gap: var(--ae-space-1); color: var(--ae-text); font-weight: 500; }
+.ae-stat { display: flex; align-items: baseline; gap: var(--ae-space-1); }
+.ae-stat[title] { cursor: help; }
+.ae-stat__value { color: var(--ae-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ae-status__note { margin-left: auto; color: var(--ae-text-subtle); }
+.ae-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ae-text-subtle); flex: none; }
+.ae-dot.is-ready { background: var(--ae-success); }
+.ae-dot.is-busy { background: var(--ae-warning); animation: ae-pulse 1.2s ease-in-out infinite; }
+.ae-dot.is-error { background: var(--ae-danger); }
+@keyframes ae-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .ae-dot.is-busy { animation: none; } }
+
+/* ==========================================================================
+   Empty, info and error states
+   ========================================================================== */
+.ae-empty {
+  padding: var(--ae-space-1) var(--ae-space-2);
+  border-radius: var(--ae-radius);
+  border: 1px solid var(--ae-border);
+  background: var(--ae-info-soft);
+}
+.ae-empty__title { margin: 0 !important; font-size: var(--ae-fs-body) !important; font-weight: 600; color: var(--ae-text) !important; }
+.ae-empty__body { margin: var(--ae-space-half) 0 0 !important; font-size: var(--ae-fs-caption) !important; color: var(--ae-text-muted) !important; line-height: var(--ae-lh-body); }
+.ae-empty--error { background: var(--ae-danger-soft); border-color: color-mix(in srgb, var(--ae-danger) 35%, transparent); }
+.ae-empty--error .ae-empty__title { color: var(--ae-danger) !important; }
+.ae-empty--success { background: var(--ae-accent-soft); border-color: transparent; }
+.ae-empty--success .ae-empty__title { color: var(--ae-success) !important; }
+
+.ae-notice { display: none; }
+.ae-notice.is-visible {
+  display: block; padding: var(--ae-space-1) var(--ae-space-2);
+  border-radius: var(--ae-radius); font-size: var(--ae-fs-caption); line-height: var(--ae-lh-body);
+  color: var(--ae-text); background: var(--ae-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--ae-danger) 35%, transparent);
+}
+#ae-cam-notice:not(:has(.is-visible)) { display: none !important; }
+
+/* ==========================================================================
+   Results table
+   ========================================================================== */
+.ae-table, .ae-table * { font-family: var(--ae-font) !important; }
+.ae-table { font-size: var(--ae-fs-body) !important; }
+.ae-table .cell-menu-button, .ae-table .sort-button { display: none !important; }
+.ae-table th .header { white-space: nowrap !important; }
+.ae-table td { font-variant-numeric: tabular-nums; }
+.ae-table table { border-collapse: collapse !important; }
+.ae-table th, .ae-table thead td {
+  background: var(--ae-surface-2) !important; color: var(--ae-text-muted) !important;
+  font-size: var(--ae-fs-caption) !important; font-weight: 600 !important;
+  text-transform: none !important;
+}
+.ae-table td, .ae-table th { border-color: var(--ae-border) !important; padding: var(--ae-space-1) !important; }
+.ae-table tbody tr:nth-child(odd) td { background: var(--ae-surface) !important; }
+.ae-table tbody tr:nth-child(even) td { background: var(--ae-surface-2) !important; }
+.ae-table .table-wrap, .ae-table .table-container {
+  border: 1px solid var(--ae-border) !important; border-radius: var(--ae-radius) !important;
+}
+
+/* ==========================================================================
+   Accordions
+   ========================================================================== */
+.ae-accordion > button, .ae-accordion > .label-wrap {
+  font-size: var(--ae-fs-section) !important; font-weight: 600 !important;
+  color: var(--ae-text) !important; padding: 0 !important;
+}
+.ae-accordion > .label-wrap span { font-size: var(--ae-fs-section) !important; font-weight: 600 !important; }
+.ae-accordion .icon { color: var(--ae-text-subtle) !important; }
+.ae-about, .ae-about p { font-size: var(--ae-fs-caption) !important; line-height: var(--ae-lh-body) !important; color: var(--ae-text-muted) !important; }
+.ae-about strong { color: var(--ae-text) !important; font-weight: 600; }
+.ae-about code {
+  font-size: 11px; padding: 1px var(--ae-space-half); border-radius: var(--ae-radius-sm);
+  background: var(--ae-surface-3); border: 1px solid var(--ae-border); color: var(--ae-text);
+}
+.ae-about p { margin: 0 0 var(--ae-space-1) !important; }
+
+/* Gradio's progress overlays: neutral, never branded purple */
+.gradio-container .progress-bar { background: var(--ae-accent) !important; }
+.gradio-container .eta-bar { background: var(--ae-accent-soft) !important; }
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 1100px) {
+  .ae-main { flex-direction: column !important; }
+  .ae-main > .ae-col { width: 100% !important; min-width: 0 !important; }
+}
+@media (max-width: 640px) {
+  .gradio-container { padding: 0 var(--ae-space-2) var(--ae-space-3) !important; }
+  .ae-header__meta { display: none; }
+  .ae-intro__title { font-size: 20px; }
+  .ae-subrow { flex-direction: column !important; }
+  .ae-subrow > .ae-card { width: 100% !important; min-width: 0 !important; }
+  .ae-status__note { margin-left: 0; }
+  .ae-hero__image, .ae-hero__image .image-container { height: 280px !important; }
+}

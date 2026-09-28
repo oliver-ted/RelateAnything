@@ -29,34 +29,55 @@ ssh -L 7860:<node>:7860 <user>@<login-host>
 
 ## Using the demo
 
-* **Webcam** tab streams live; **Image / upload** tab is better on CPU.
-* **Object classes** — any comma-separated words (`forklift, pallet, hi-vis vest`).
-  Re-parameterizes YOLOE through its text encoder. Leave empty on the
-  prompt-free checkpoint.
-* **Predicates** — any comma-separated relations (`lifting, blocking, reaching for`).
-  Re-parameterized through the relation checkpoint's own text encoder; after
-  that inference is pure vision. **Neither box requires retraining.**
-* Sliders: detector confidence, max triplets, relation score threshold.
-* **Graph decode** (radio): `merged` is one ranked graph. `both` / `spatial` /
-  `semantic` use the **two-graph decode** — the *same* forward pass ranked
-  separately inside the spatial (layout, blue) and semantic (content, green)
-  predicate columns, then cut at top-K per stream. No second forward pass —
-  it re-ranks scores already computed, measured at +3 ms (35.1 → 38.2) — and
-  it beat a single merged graph of twice the budget on 6/6 benchmark cells.
-  Requires a `--dual_spatial_head` checkpoint — the shipped full-recipe model
-  has one (`dual_spatial_head: true`, `gate_mlp: true`); the HUD warns if a
-  checkpoint does not. The split is derived per-vocabulary from the corpus type
-  map, so editing the predicate box re-derives it (22/22 typed from the map,
-  zero guessed, on the default list).
-* **Spatial stream: drop relatedness prior** (checkbox, default **off**).
-  Relatedness is an annotation-propensity ≈ contact signal. Dropping it is the
-  measured optimum for *judging spatial truth* (+0.068 macro AUC on
-  SpatialSense, projective predicates +0.11–0.14) — but on raw detector output
-  relatedness is also what suppresses duplicate boxes, so dropping it saturates
-  scores at 1.00 and surfaces junk (`motorcycle –on→ motorcycle`). Kept:
-  `person –on→ motorcycle 0.57`, `boot –on→ motorcycle 0.48`. The demo defaults
-  to readability; `ParallelScenePipeline` defaults to the measured optimum.
-* The HUD shows per-stage latency so you can see the pipeline working.
+The UI is presented as **Aether Scene Intelligence** (set `PRODUCT_NAME` to
+rename it). The bundled sample image is analyzed on load, so the page never
+opens empty. UI names map to the pipeline as follows:
+
+| UI | pipeline |
+|---|---|
+| Input: **Image** / **Camera** (segmented control) | upload vs live webcam stream (Image is better on CPU) |
+| **Objects to detect** | YOLOE text prompts (`set_object_classes`). Leave empty on the prompt-free checkpoint |
+| **Relationships to detect** | relation head vocabulary (`set_predicates`) |
+| **Apply** | re-parameterizes both; **neither box requires retraining** |
+| **Detection sensitivity** | detector confidence (`det_conf`, default 0.25) |
+| **Relationship confidence** | relation score threshold (default 0.30) |
+| **Max relationships shown** | max triplets / `top_k` (default 12) |
+| Advanced: **Graph view** Combined / Both / Spatial / Semantic | graph decode `merged` / `both` / `spatial` / `semantic` |
+| Advanced: **Strict spatial scoring** | spatial stream: drop relatedness prior (default off) |
+
+* **Graph view.** `Combined` (`merged`) is one ranked graph. The others use the
+  **two-graph decode**: the *same* forward pass ranked separately inside the
+  spatial (layout, amber arrows) and semantic (content, green arrows) predicate
+  columns, then cut at top-K per stream. No second forward pass; it re-ranks
+  scores already computed, measured at +3 ms (35.1 → 38.2), and it beat a
+  single merged graph of twice the budget on 6/6 benchmark cells.
+  Requires a `--dual_spatial_head` checkpoint (the shipped full-recipe model
+  has one); the status strip warns if a checkpoint does not. The split is
+  derived per-vocabulary from the corpus type map, so editing the predicate box
+  re-derives it (22/22 typed from the map, zero guessed, on the default list).
+* **Strict spatial scoring** (default **off**). Relatedness is an
+  annotation-propensity ≈ contact signal. Dropping it is the measured optimum
+  for *judging spatial truth* (+0.068 macro AUC on SpatialSense, projective
+  predicates +0.11–0.14), but on raw detector output relatedness is also what
+  suppresses duplicate boxes, so dropping it saturates scores at 1.00 and
+  surfaces junk (`motorcycle –on→ motorcycle`). The demo defaults to
+  readability; `ParallelScenePipeline` defaults to the measured optimum.
+* The **status strip** under the scene graph shows model state, latency, FPS,
+  object and relationship counts; hover the latency for the per-stage split.
+* **Detected relationships** lists every relationship shown, sorted by
+  confidence, with CSV and JSON export (generated in the browser).
+
+### Branding and UI code
+
+| file | role |
+|---|---|
+| `deploy/ui/branding.py` | `PRODUCT_NAME`, company name, copy, logo/favicon/sample paths |
+| `deploy/ui/theme.py` | Gradio theme mapped onto the CSS design tokens; Gradio 5/6 launch kwargs |
+| `deploy/ui/styles.css` | design tokens (light + dark) and all component styling |
+| `deploy/ui/head.js` | CSV/JSON export and friendly camera-permission messages |
+| `deploy/ui/results.py` | results table rows and status strip (pure Python, unit tested) |
+| `assets/aether-logo.svg` | **logo slot (placeholder)**: SVG with a viewBox, shown 24 px tall |
+| `assets/aether-favicon.svg` | favicon |
 
 ## Why it is fast (measured, A40, bf16)
 
@@ -114,5 +135,5 @@ real-time needs a smaller backbone, which is a training project, not a flag.
 | file | role |
 |---|---|
 | `deploy/pipeline.py` | `ParallelScenePipeline` — overlap, static shapes, both re-parameterization APIs |
-| `deploy/gradio_app.py` | the UI |
+| `deploy/gradio_app.py` | the UI layout and event wiring |
 | `relsgg/api.py` | `RelateAnything.from_checkpoint` / `set_vocabulary` |

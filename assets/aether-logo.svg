@@ -1,0 +1,8 @@
+<!-- PLACEHOLDER: replace with the official Aether AI logo.
+     Expected: SVG (preferred) with a viewBox and no fixed width/height,
+     or a PNG at 2x (e.g. 320x64). Displayed 24px tall in the header. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 24" role="img" aria-label="Aether AI">
+  <rect x="0" y="0" width="24" height="24" rx="5" fill="#1B3A2B"/>
+  <path d="M7 18 L12 6 L17 18 M9.2 13.5 H14.8" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="32" y="17" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="currentColor">Aether AI</text>
+</svg>

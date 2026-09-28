@@ -1,5 +1,9 @@
 """RelateAnything live demo — YOLOE-11m (masks) + open-vocabulary relations.
 
+Presented as a branded client demo (Aether Scene Intelligence). Theme, styles,
+branding and results formatting live in deploy/ui/; this file holds the layout
+and the event wiring. Model calls and default knob values are unchanged.
+
     python deploy/gradio_app.py                    # auto GPU, opens in browser
     python deploy/gradio_app.py --device cpu       # no GPU needed
     python deploy/gradio_app.py --share            # public link (SME demo)
@@ -20,6 +24,7 @@ without touching the weights.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 
@@ -31,6 +36,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import gradio as gr                                        # noqa: E402
 from deploy.pipeline import (ParallelScenePipeline,        # noqa: E402
                              PipelineConfig, _default_predicates)
+from deploy.ui import branding                             # noqa: E402
+from deploy.ui.results import (TABLE_HEADERS, Metrics,     # noqa: E402
+                               notice, object_name,
+                               relationship_rows, status_strip)
+from deploy.ui.theme import (blocks_kwargs,                # noqa: E402
+                             component_kwargs, launch_kwargs)
+
+log = logging.getLogger("demo")
 
 DEFAULT_CLASSES = [
     "person", "face", "hand", "laptop", "keyboard", "mouse", "monitor", "cup",
@@ -70,8 +83,11 @@ def _edges_for(res, mode: str):
 
 
 def render(res, show_masks: bool, show_labels: bool,
-           mode: str = "merged") -> np.ndarray:
-    """Draw masks, boxes and relation arrows onto the frame (BGR in, RGB out)."""
+           mode: str = "merged", hud: bool = True) -> np.ndarray:
+    """Draw masks, boxes and relation arrows onto the frame (BGR in, RGB out).
+
+    `hud=False` omits the latency bar; the web UI shows it in its status strip.
+    """
     img = res.frame.copy()
     H, W = img.shape[:2]
 
@@ -90,9 +106,8 @@ def render(res, show_masks: bool, show_labels: bool,
         centers.append(((x1 + x2) // 2, (y1 + y2) // 2))
         cv2.rectangle(img, (x1, y1), (x2, y2), _color(i), 2)
         if show_labels:
-            lab = res.labels[i] if i < len(res.labels) else f"obj{i}"
             sc = float(res.scores[i]) if i < len(res.scores) else 0.0
-            txt = f"{i}:{lab} {sc:.2f}"
+            txt = f"{object_name(res.labels, i)} {sc:.2f}"
             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
             cv2.rectangle(img, (x1, max(0, y1 - th - 6)), (x1 + tw + 4, y1),
                           _color(i), -1)
@@ -123,6 +138,8 @@ def render(res, show_masks: bool, show_labels: bool,
             cv2.putText(img, pred, (mid[0] + 1, mid[1]),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, edge_col, 1, cv2.LINE_AA)
 
+    if not hud:
+        return img[:,:,::-1]
     t = res.timing
     hud = (f"{t.fps:5.1f} FPS | det {t.det:5.1f} | backbone {t.backbone:5.1f} "
            f"| rel {t.relation:5.1f} | total {t.total:5.1f} ms")
@@ -132,125 +149,340 @@ def render(res, show_masks: bool, show_labels: bool,
     return img[:,:,::-1]
 
 
-def infer(frame_rgb, conf, top_k, score_thr, show_masks, show_labels, mode,
-          spatial_raw):
-    if frame_rgb is None or PIPE is None:
-        return None, "", ""
+# --------------------------------------------------------------------------
+# Inference (unchanged pipeline call) and its presentation
+# --------------------------------------------------------------------------
+
+GRAPH_VIEWS = [("Combined", "merged"), ("Both", "both"),
+               ("Spatial", "spatial"), ("Semantic", "semantic")]
+SOURCES = ["Image", "Camera"]
+_NO_CHANGE = 5      # number of outputs `analyze` writes
+
+
+def run_pipeline(frame_rgb, conf, top_k, score_thr, mode, spatial_raw):
+    """The model call, exactly as the original demo made it."""
     PIPE.cfg.det_conf = float(conf)
-    res = PIPE(frame_rgb[:,:,::-1].copy(), top_k=int(top_k),
-               score_thr=float(score_thr), decompose=(mode != "merged"),
-               spatial_drop_pair=bool(spatial_raw))
+    return PIPE(frame_rgb[:,:,::-1].copy(), top_k=int(top_k),
+                score_thr=float(score_thr), decompose=(mode != "merged"),
+                spatial_drop_pair=bool(spatial_raw))
 
-    def _rows(trips):
-        return "\n".join(
-            f"| {res.labels[s] if s < len(res.labels) else s} | **{p}** | "
-            f"{res.labels[o] if o < len(res.labels) else o} | {sc:.2f} |"
-            for s, p, o, sc in trips) or "| – | – | – | – |"
 
-    hdr = "| subject | predicate | object | score |\n|---|---|---|---|\n"
-    if mode == "merged":
-        table = hdr + _rows(res.triplets)
-    elif mode == "spatial":
-        table = "**layout graph (spatial)**\n\n" + hdr + _rows(res.triplets_spatial)
-    elif mode == "semantic":
-        table = "**content graph (semantic)**\n\n" + hdr + _rows(res.triplets_semantic)
+def analyze(frame_rgb, conf, top_k, score_thr, show_masks, show_labels, mode,
+            spatial_raw):
+    """-> (scene graph image, table rows, status html, note html, metrics)."""
+    if PIPE is None:
+        return (None, [], status_strip("loading"),
+                notice("info", "The model is starting up",
+                       "Results will appear here in a moment."), None)
+    if frame_rgb is None:
+        return (None, [], status_strip("idle"),
+                notice("empty", "No image yet",
+                       "Upload an image, or switch to Camera for live "
+                       "analysis."), None)
+    try:
+        res = run_pipeline(frame_rgb, conf, top_k, score_thr, mode,
+                           spatial_raw)
+        rows = relationship_rows(res, mode)
+        warning = ""
+        if mode != "merged" and not PIPE.has_dual_head:
+            warning = "Graph view split is approximate for this model"
+        metrics = Metrics.from_result(res, len(rows), warning)
+        image = render(res, show_masks, show_labels, mode, hud=False)
+    except Exception:
+        log.exception("inference failed")
+        return (gr.update(), gr.update(),
+                status_strip("error", message="Could not analyze this frame"),
+                notice("error", "We could not analyze this image",
+                       "Try a different image, or refresh the page if the "
+                       "problem continues."), None)
+    if rows:
+        note = ""
+    elif metrics.objects:
+        note = notice("empty", "No relationships found",
+                      "Try lowering Relationship confidence, or add "
+                      "relationships to the detection vocabulary.")
     else:
-        table = ("**layout graph (spatial)**\n\n" + hdr + _rows(res.triplets_spatial)
-                 + "\n\n**content graph (semantic)**\n\n" + hdr
-                 + _rows(res.triplets_semantic))
-    t = res.timing
-    stats = (f"**{t.fps:.1f} FPS**  ·  detector {t.det:.1f} ms  ·  "
-             f"backbone {t.backbone:.1f} ms  ·  relations {t.relation:.1f} ms  "
-             f"·  **total {t.total:.1f} ms**  ·  {len(res.boxes_xyxy)} objects")
-    if mode != "merged" and not PIPE.has_dual_head:
-        stats += "  ·  ⚠ checkpoint has no dual head — split is a re-ranking only"
-    return render(res, show_masks, show_labels, mode), table, stats
+        note = notice("empty", "No objects detected",
+                      "Try lowering Detection sensitivity, or check the "
+                      "objects in the detection vocabulary.")
+    return image, rows, status_strip("ready", metrics), note, metrics
+
+
+def analyze_still(source, frame_rgb, *knobs):
+    """Re-run the still image after a knob change; no-op in camera mode."""
+    if source != "Image":
+        return (gr.update(),) * _NO_CHANGE
+    return analyze(frame_rgb, *knobs)
+
+
+def mark_processing(metrics):
+    return status_strip("processing", metrics)
 
 
 def apply_vocab(classes_txt, preds_txt):
+    """Re-target both vocabularies. Same calls as before; friendlier copy."""
     if PIPE is None:
-        return "pipeline not ready"
-    msgs = []
+        return notice("info", "The model is still starting up",
+                      "Try again in a moment.")
+    done, failed = [], []
     try:
         cls = [c.strip() for c in classes_txt.replace("\n", ",").split(",") if c.strip()]
         if cls:
             PIPE.set_object_classes(cls)
-            msgs.append(f"detector → {len(cls)} classes")
-    except Exception as e:
-        msgs.append(f"detector FAILED: {e}")
+            done.append(f"{len(cls)} object{'s' if len(cls) != 1 else ''}")
+    except Exception:
+        log.exception("set_object_classes failed")
+        failed.append("objects")
     try:
         prs = [p.strip() for p in preds_txt.replace("\n", ",").split(",") if p.strip()]
         if prs:
             PIPE.set_predicates(prs)
-            msgs.append(f"relations → {len(prs)} predicates")
-    except Exception as e:
-        msgs.append(f"relations FAILED: {e}")
-    return " · ".join(msgs)
+            done.append(f"{len(prs)} relationship{'s' if len(prs) != 1 else ''}")
+    except Exception:
+        log.exception("set_predicates failed")
+        failed.append("relationships")
+    if failed:
+        return notice("error", f"Could not update {' and '.join(failed)}",
+                      "Check the list for typos and try again. Separate "
+                      "entries with commas or new lines.")
+    if not done:
+        return notice("info", "Nothing to apply",
+                      "Add at least one object or relationship, then "
+                      "select Apply.")
+    return notice("success", "Vocabulary updated",
+                  f"Now detecting {' and '.join(done)}.")
 
 
-def build_ui(device_note: str):
-    with gr.Blocks(title="RelateAnything — live scene graphs",
-                   theme=gr.themes.Soft()) as demo:
-        gr.Markdown(
-            "# RelateAnything · live open-vocabulary scene graphs\n"
-            "YOLOE-11m (masks) feeds boxes to an open-vocabulary relation "
-            f"model. **Both vocabularies are editable live.** {device_note}")
+def _apply_busy():
+    return (gr.update(value="Applying", interactive=False),
+            notice("info", "Updating vocabulary",
+                   "This takes a few seconds."))
 
-        with gr.Row():
-            with gr.Column(scale=3):
-                with gr.Tab("Webcam"):
-                    cam = gr.Image(sources=["webcam"], streaming=True,
-                                   type="numpy", label="camera",
-                                   height=380)
-                with gr.Tab("Image / upload"):
-                    still = gr.Image(sources=["upload", "clipboard"],
-                                     type="numpy", label="image", height=380)
-                out = gr.Image(label="scene graph", height=440)
-                stats = gr.Markdown()
-            with gr.Column(scale=2):
-                gr.Markdown("### Vocabularies — type anything, then Apply")
-                classes_txt = gr.Textbox(
-                    label="object classes (YOLOE prompts) — leave empty on the "
-                          "prompt-free checkpoint to detect anything",
-                    lines=4, value="")
-                preds_txt = gr.Textbox(
-                    label="predicates (relation head)", lines=4,
-                    value=", ".join(_default_predicates()))
-                apply_btn = gr.Button("Apply vocabularies", variant="primary")
-                vocab_msg = gr.Markdown()
-                gr.Markdown("### Knobs")
-                conf = gr.Slider(0.05, 0.9, 0.25, step=0.05,
-                                 label="detector confidence")
-                top_k = gr.Slider(1, 30, 12, step=1, label="max triplets")
-                score_thr = gr.Slider(0.0, 0.95, 0.30, step=0.05,
-                                      label="relation score threshold")
-                show_masks = gr.Checkbox(True, label="show masks")
-                show_labels = gr.Checkbox(True, label="show labels")
-                mode = gr.Radio(
-                    ["merged", "both", "spatial", "semantic"], value="merged",
-                    label="graph decode",
-                    info="merged = one ranked graph. The others use the "
-                         "two-graph decode: the same forward pass ranked "
-                         "separately inside the spatial (layout, blue) and "
-                         "semantic (content, green) predicate columns — "
-                         "measured to beat a single graph of twice the budget "
-                         "on 6/6 benchmark cells.")
-                spatial_raw = gr.Checkbox(
-                    False, label="spatial stream: drop relatedness prior",
-                    info="ON matches the measured spatial-truth optimum "
-                         "(+0.068 macro AUC on SpatialSense), but relatedness "
-                         "is also what suppresses junk pairs from overlapping "
-                         "detections — with it OFF the spatial scores saturate "
-                         "near 1.00 and duplicate boxes surface. OFF is the "
-                         "readable default for a demo.")
-                table = gr.Markdown()
 
-        apply_btn.click(apply_vocab, [classes_txt, preds_txt], vocab_msg)
-        args_in = [conf, top_k, score_thr, show_masks, show_labels, mode,
-                   spatial_raw]
-        cam.stream(infer, [cam] + args_in, [out, table, stats],
-                   stream_every=0.12, concurrency_limit=1, show_progress="hidden")
-        still.change(infer, [still] + args_in, [out, table, stats])
+def _apply_idle():
+    return gr.update(value="Apply", interactive=True)
+
+
+def switch_source(source):
+    camera = source == "Camera"
+    note = (notice("info", "Camera selected",
+                   "Start the camera in the input panel to begin live "
+                   "analysis.") if camera else gr.update())
+    return gr.update(visible=not camera), gr.update(visible=camera), note
+
+
+def _load_sample():
+    img = cv2.imread(str(branding.SAMPLE_IMAGE))
+    return None if img is None else img[:,:,::-1].copy()
+
+
+# --------------------------------------------------------------------------
+# Layout
+# --------------------------------------------------------------------------
+
+def _html(value: str = "", **kw) -> gr.HTML:
+    """Static/structural HTML block without Gradio's own padding and frame."""
+    return gr.HTML(value, **kw, **component_kwargs(gr.HTML, padding=False,
+                                                    container=False))
+
+
+def _section(title: str, caption: str = "") -> str:
+    cap = f'<p class="ae-section__caption">{caption}</p>' if caption else ""
+    return f'<div class="ae-section"><h2 class="ae-section__title">{title}</h2>{cap}</div>'
+
+
+def _header() -> str:
+    return (
+        '<header class="ae-header">'
+        '<div class="ae-header__brand">'
+        f'{branding.logo_markup()}'
+        '<span class="ae-header__divider" aria-hidden="true"></span>'
+        f'<span class="ae-header__product">{branding.PRODUCT_NAME}</span>'
+        '</div>'
+        f'<div class="ae-header__meta">Powered by <strong>{branding.COMPANY_NAME}</strong></div>'
+        '</header>'
+        '<div class="ae-intro">'
+        f'<h1 class="ae-intro__title">{branding.PAGE_HEADING}</h1>'
+        f'<p class="ae-intro__subtitle">{branding.TAGLINE}</p>'
+        '</div>')
+
+
+def _about(runtime: dict) -> str:
+    return f"""
+**How it works.** An object detector (YOLOE-11m with segmentation masks) finds
+the objects in each frame. An open-vocabulary relationship model then scores
+how every pair of objects relates. Both vocabularies can be changed at any
+time, with no retraining.
+
+**Graph view.** *Combined* shows a single ranked list of relationships.
+*Spatial* shows where things are relative to each other (amber arrows) and
+*Semantic* shows what things are doing (green arrows). *Both* shows the two
+side by side. All views come from the same analysis pass, ranked separately.
+In benchmark testing, the split views beat a single combined graph twice their
+size on all 6 test settings.
+
+**Strict spatial scoring.** Scores spatial relationships on geometry alone.
+This is the most accurate setting for judging spatial truth (+0.068 macro AUC
+on SpatialSense), but it can surface duplicate detections as relationships,
+so it is off by default.
+
+**Runtime.** Compute: {runtime.get("device", "unknown")}.
+Detector: `{runtime.get("detector", "unknown")}`.
+Relationship model: `{runtime.get("relation_model", "unknown")}`.
+
+{branding.SAMPLE_CREDIT}
+"""
+
+
+def build_ui(runtime: dict | None = None):
+    runtime = runtime or {}
+    prompt_free = runtime.get("prompt_free", True)
+    sample = _load_sample()
+
+    with gr.Blocks(**blocks_kwargs(f"{branding.PRODUCT_NAME} | "
+                                   f"{branding.COMPANY_NAME}")) as demo:
+        _html(_header(), elem_classes="ae-header-host")
+
+        with gr.Row(elem_classes="ae-main", equal_height=False):
+            # ---------------- main column: output first ----------------
+            with gr.Column(scale=8, min_width=560, elem_classes="ae-col"):
+                with gr.Column(elem_classes="ae-card ae-hero"):
+                    _html(_section("Scene graph"))
+                    out = gr.Image(
+                        label="Scene graph", show_label=False, height=520,
+                        interactive=False, elem_classes="ae-hero__image",
+                        **component_kwargs(
+                            gr.Image, buttons=["download", "fullscreen"],
+                            show_share_button=False,
+                            show_fullscreen_button=True))
+                    status = _html(status_strip("loading"),
+                                   elem_classes="ae-status-host")
+
+                with gr.Row(equal_height=False, elem_classes="ae-subrow"):
+                    with gr.Column(scale=2, min_width=280,
+                                   elem_classes="ae-card"):
+                        _html(_section("Input"))
+                        source = gr.Radio(SOURCES, value="Image",
+                                          show_label=False, container=False,
+                                          elem_classes="ae-segmented")
+                        still = gr.Image(value=sample,
+                                         sources=["upload", "clipboard"],
+                                         type="numpy", label="Image",
+                                         show_label=False, height=240)
+                        cam = gr.Image(sources=["webcam"], streaming=True,
+                                       type="numpy", label="Camera",
+                                       show_label=False, height=240,
+                                       visible=False)
+                        _html('<div class="ae-notice" role="alert">'
+                              '<span class="ae-notice__text"></span></div>',
+                              elem_id="ae-cam-notice")
+
+                    with gr.Column(scale=3, min_width=320,
+                                   elem_classes="ae-card"):
+                        _html(_section("Detected relationships",
+                                       "Sorted by confidence"))
+                        results_note = _html(elem_classes="ae-collapsible")
+                        table = gr.Dataframe(
+                            headers=TABLE_HEADERS,
+                            datatype=["str", "str", "str", "number"],
+                            value=[], interactive=False, wrap=True,
+                            column_widths=["27%", "25%", "26%", "22%"],
+                            show_label=False, elem_classes="ae-table",
+                            **component_kwargs(gr.Dataframe, max_height=320,
+                                               buttons=[]))
+                        with gr.Row(elem_classes="ae-actions"):
+                            csv_btn = gr.Button("Export CSV", size="sm",
+                                                variant="secondary")
+                            json_btn = gr.Button("Export JSON", size="sm",
+                                                 variant="secondary")
+
+            # ---------------- side column: controls ----------------
+            with gr.Column(scale=4, min_width=300, elem_classes="ae-col"):
+                with gr.Column(elem_classes="ae-card"):
+                    _html(_section("Detection vocabulary",
+                                   "Type any words, separated by commas, "
+                                   "then select Apply."))
+                    classes_txt = gr.Textbox(
+                        label="Objects to detect", lines=3, value="",
+                        placeholder="e.g. forklift, pallet, safety vest",
+                        info=("Leave empty to detect anything" if prompt_free
+                              else "Leave empty to keep the current list"))
+                    preds_txt = gr.Textbox(
+                        label="Relationships to detect", lines=3,
+                        value=", ".join(_default_predicates()))
+                    apply_btn = gr.Button("Apply", variant="primary",
+                                          elem_classes="ae-apply")
+                    vocab_msg = _html(elem_classes="ae-collapsible")
+
+                with gr.Column(elem_classes="ae-card"):
+                    _html(_section("Display"))
+                    conf = gr.Slider(0.05, 0.9, 0.25, step=0.05,
+                                     label="Detection sensitivity",
+                                     info="Minimum confidence for an object "
+                                          "to be shown")
+                    score_thr = gr.Slider(0.0, 0.95, 0.30, step=0.05,
+                                          label="Relationship confidence",
+                                          info="Minimum confidence for a "
+                                               "relationship to be shown")
+                    top_k = gr.Slider(1, 30, 12, step=1,
+                                      label="Max relationships shown")
+
+                with gr.Accordion("Advanced settings", open=False,
+                                  elem_classes="ae-card ae-accordion"):
+                    mode = gr.Radio(GRAPH_VIEWS, value="merged",
+                                    label="Graph view",
+                                    info="How relationships are grouped. "
+                                         "See About for details.",
+                                    elem_classes="ae-segmented")
+                    show_masks = gr.Checkbox(True, label="Show object masks")
+                    show_labels = gr.Checkbox(True, label="Show object labels")
+                    spatial_raw = gr.Checkbox(
+                        False, label="Strict spatial scoring",
+                        info="Judges spatial relationships on geometry "
+                             "alone. May show duplicate objects.")
+
+                with gr.Accordion("About", open=False,
+                                  elem_classes="ae-card ae-accordion"):
+                    gr.Markdown(_about(runtime), elem_classes="ae-about")
+
+        # ---------------- events ----------------
+        knobs = [conf, top_k, score_thr, show_masks, show_labels, mode,
+                 spatial_raw]
+        outputs = [out, table, status, results_note]
+        metrics = gr.State(None)
+        outs = outputs + [metrics]
+
+        cam.stream(analyze, [cam] + knobs, outs, stream_every=0.12,
+                   concurrency_limit=1, show_progress="hidden")
+        still.change(mark_processing, [metrics], [status], queue=False,
+                     show_progress="hidden").then(
+            analyze, [still] + knobs, outs, show_progress="hidden")
+
+        rerun = dict(fn=analyze_still, inputs=[source, still] + knobs,
+                     outputs=outs, show_progress="hidden")
+        for slider in (conf, top_k, score_thr):
+            slider.release(**rerun)
+        for toggle in (show_masks, show_labels, mode, spatial_raw):
+            toggle.input(**rerun)
+
+        source.change(switch_source, [source], [still, cam, results_note],
+                      js="(s) => window.aeSourceChanged(s)",
+                      queue=False, show_progress="hidden").then(**rerun)
+
+        apply_btn.click(_apply_busy, None, [apply_btn, vocab_msg],
+                        queue=False, show_progress="hidden").then(
+            apply_vocab, [classes_txt, preds_txt], vocab_msg,
+            show_progress="hidden").then(
+            _apply_idle, None, apply_btn, queue=False,
+            show_progress="hidden").then(**rerun)
+
+        csv_btn.click(None, [table], None,
+                      js="(df) => window.aeExport('csv', df)")
+        json_btn.click(None, [table], None,
+                       js="(df) => window.aeExport('json', df)")
+
+        # never open on an empty canvas: render the bundled sample
+        demo.load(analyze, [still] + knobs, outs, show_progress="hidden")
     return demo
 
 
@@ -283,12 +515,21 @@ def main():
                          default_classes=None if prompt_free else DEFAULT_CLASSES)
     print(f"[demo] loading pipeline on {dev} …")
     PIPE = ParallelScenePipeline(cfg)
-    note = (f"Running on **{dev.upper()}**"
+    note = (f"Running on {dev.upper()}"
             + (" with detector‖backbone overlap." if cfg.overlap else "."))
     print(f"[demo] ready — {note}")
-    build_ui(note).queue(max_size=4).launch(
+    runtime = {
+        "device": dev.upper() + (", parallel detection and encoding"
+                                 if cfg.overlap else ""),
+        "detector": os.path.basename(a.det),
+        "relation_model": os.path.basename(a.ckpt),
+        "prompt_free": prompt_free,
+    }
+    # Errors are caught and shown as friendly in-page states; raw tracebacks
+    # stay in the server log.
+    build_ui(runtime).queue(max_size=4).launch(
         server_name="0.0.0.0", server_port=a.port, share=a.share,
-        show_error=True)
+        show_error=False, **launch_kwargs())
 
 
 if __name__ == "__main__":
