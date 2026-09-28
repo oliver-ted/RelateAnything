@@ -29,7 +29,7 @@ ssh -L 7860:<node>:7860 <user>@<login-host>
 
 ## Using the demo
 
-The UI is presented as **Aether Scene Intelligence** (set `PRODUCT_NAME` to
+The UI is presented as **RelayAI** by Aether AI (set `PRODUCT_NAME` to
 rename it). The bundled sample image is analyzed on load, so the page never
 opens empty. UI names map to the pipeline as follows:
 
@@ -76,8 +76,8 @@ opens empty. UI names map to the pipeline as follows:
 | `deploy/ui/styles.css` | design tokens (light + dark) and all component styling |
 | `deploy/ui/head.js` | CSV/JSON export and friendly camera-permission messages |
 | `deploy/ui/results.py` | results table rows and status strip (pure Python, unit tested) |
-| `assets/aether-logo.svg` | **logo slot (placeholder)**: SVG with a viewBox, shown 24 px tall |
-| `assets/aether-favicon.svg` | favicon |
+| `assets/aether-logo-black.png`, `assets/aether-logo-white.png` | Aether AI logo for light / dark mode, shown 24 px tall |
+| `assets/aether-favicon.png` | favicon (the logo mark) |
 
 ## Why it is fast (measured, A40, bf16)
 

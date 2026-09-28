@@ -1,6 +1,6 @@
 """RelateAnything live demo — YOLOE-11m (masks) + open-vocabulary relations.
 
-Presented as a branded client demo (Aether Scene Intelligence). Theme, styles,
+Presented as a branded client demo (RelayAI by Aether AI). Theme, styles,
 branding and results formatting live in deploy/ui/; this file holds the layout
 and the event wiring. Model calls and default knob values are unchanged.
 

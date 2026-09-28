@@ -115,8 +115,9 @@ footer, .gradio-container > footer, .built-with, .show-api { display: none !impo
 }
 .ae-header__brand { display: flex; align-items: center; gap: var(--ae-space-2); min-width: 0; }
 .ae-logo { display: inline-flex; align-items: center; height: 24px; color: var(--ae-brand); }
-.ae-logo svg, img.ae-logo { height: 24px; width: auto; display: block; }
-.dark .ae-logo { color: var(--ae-text); }
+.ae-logo__img { height: 24px !important; width: auto !important; margin: 0 !important; display: block; }
+.ae-logo .ae-logo__img--dark, .dark .ae-logo .ae-logo__img--light { display: none !important; }
+.dark .ae-logo .ae-logo__img--dark { display: block !important; }
 .ae-logo--text { font-weight: 600; font-size: var(--ae-fs-section); }
 .ae-header__divider { width: 1px; height: 24px; background: var(--ae-border-strong); flex: none; }
 .ae-header__product {

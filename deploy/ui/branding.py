@@ -9,22 +9,22 @@ from __future__ import annotations
 
 import base64
 import os
-import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSETS = REPO_ROOT / "assets"
 
-PRODUCT_NAME = os.environ.get("PRODUCT_NAME", "Aether Scene Intelligence")
+PRODUCT_NAME = os.environ.get("PRODUCT_NAME", "RelayAI")
 COMPANY_NAME = "Aether AI"
 PAGE_HEADING = "Live scene analysis"
 TAGLINE = ("Point a camera or upload an image to see which objects are in the "
            "scene and how they relate to each other.")
 
-# Logo slot. SVG is inlined so its `currentColor` text follows light/dark mode;
-# a PNG/JPG at the same stem is used if no SVG is present.
-LOGO_PATH = ASSETS / "aether-logo.svg"
-FAVICON_PATH = ASSETS / "aether-favicon.svg"
+# Official logo on a transparent background: black for light mode, white for
+# dark mode (1043x250, shown 24px tall). The favicon is the mark alone.
+LOGO_LIGHT = ASSETS / "aether-logo-black.png"
+LOGO_DARK = ASSETS / "aether-logo-white.png"
+FAVICON_PATH = ASSETS / "aether-favicon.png"
 
 # Rendered on load so the page never opens on an empty canvas. CC0 (see
 # assets/reel/credits.json).
@@ -33,16 +33,17 @@ SAMPLE_CREDIT = ("Sample image: \"Man riding bicycle\" by Clem Onojeghuo, "
                  "CC0, via Wikimedia Commons.")
 
 
+def _data_uri(path: Path) -> str:
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def logo_markup() -> str:
-    """Header logo as HTML: inline SVG, an <img> data URI, or a text mark."""
-    if LOGO_PATH.is_file():
-        svg = LOGO_PATH.read_text(encoding="utf-8")
-        svg = re.sub(r"<!--.*?-->", "", svg, flags=re.S).strip()
-        return f'<span class="ae-logo" aria-label="{COMPANY_NAME}">{svg}</span>'
-    for ext, mime in ((".png", "image/png"), (".jpg", "image/jpeg")):
-        p = LOGO_PATH.with_suffix(ext)
-        if p.is_file():
-            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
-            return (f'<img class="ae-logo" alt="{COMPANY_NAME}" '
-                    f'src="data:{mime};base64,{b64}">')
-    return f'<span class="ae-logo ae-logo--text">{COMPANY_NAME}</span>'
+    """Header logo: light and dark variants, CSS shows the one that fits."""
+    if not (LOGO_LIGHT.is_file() and LOGO_DARK.is_file()):
+        return f'<span class="ae-logo ae-logo--text">{COMPANY_NAME}</span>'
+    return (f'<span class="ae-logo" role="img" aria-label="{COMPANY_NAME}">'
+            f'<img class="ae-logo__img ae-logo__img--light" alt="" '
+            f'src="{_data_uri(LOGO_LIGHT)}">'
+            f'<img class="ae-logo__img ae-logo__img--dark" alt="" '
+            f'src="{_data_uri(LOGO_DARK)}"></span>')
