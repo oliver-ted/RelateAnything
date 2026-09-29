@@ -209,10 +209,26 @@ def analyze(frame_rgb, conf, top_k, score_thr, show_masks, show_labels, mode,
 
 
 def analyze_still(source, frame_rgb, *knobs):
-    """Re-run the still image after a knob change; no-op in camera mode."""
+    """Re-run the still image after a knob change; no-op in camera mode.
+
+    `frame_rgb` comes from server-side session state, not from the Image
+    component: re-reading the component makes Gradio reopen its temp-file
+    copy, which may no longer exist (it broke the hosted Space).
+    """
     if source != "Image":
         return (gr.update(),) * _NO_CHANGE
     return analyze(frame_rgb, *knobs)
+
+
+def analyze_input(frame_rgb, *knobs):
+    """New upload, paste or clear: remember the frame, then analyze it."""
+    return (frame_rgb,) + analyze(frame_rgb, *knobs)
+
+
+def load_sample(*knobs):
+    """Page load: show and analyze the bundled sample, straight from memory."""
+    frame = _load_sample()
+    return (frame, frame) + analyze(frame, *knobs)
 
 
 def mark_processing(metrics):
@@ -337,7 +353,6 @@ Relationship model: `{runtime.get("relation_model", "unknown")}`.
 def build_ui(runtime: dict | None = None):
     runtime = runtime or {}
     prompt_free = runtime.get("prompt_free", True)
-    sample = _load_sample()
 
     with gr.Blocks(**blocks_kwargs(f"{branding.PRODUCT_NAME} | "
                                    f"{branding.COMPANY_NAME}")) as demo:
@@ -365,8 +380,7 @@ def build_ui(runtime: dict | None = None):
                         source = gr.Radio(SOURCES, value="Image",
                                           show_label=False, container=False,
                                           elem_classes="ae-segmented")
-                        still = gr.Image(value=sample,
-                                         sources=["upload", "clipboard"],
+                        still = gr.Image(sources=["upload", "clipboard"],
                                          type="numpy", label="Image",
                                          show_label=False, height=240)
                         cam = gr.Image(sources=["webcam"], streaming=True,
@@ -452,13 +466,20 @@ def build_ui(runtime: dict | None = None):
         metrics = gr.State(None)
         outs = outputs + [metrics]
 
+        # The still image being analyzed, kept in session state so knob
+        # changes never depend on Gradio's temp file for the Image component.
+        frame = gr.State(None)
+
         cam.stream(analyze, [cam] + knobs, outs, stream_every=0.12,
                    concurrency_limit=1, show_progress="hidden")
-        still.change(mark_processing, [metrics], [status], queue=False,
-                     show_progress="hidden").then(
-            analyze, [still] + knobs, outs, show_progress="hidden")
+        # `input` fires on user upload/paste/clear only, not when load_sample
+        # sets the value, so the sample is not analyzed twice.
+        still.input(mark_processing, [metrics], [status], queue=False,
+                    show_progress="hidden").then(
+            analyze_input, [still] + knobs, [frame] + outs,
+            show_progress="hidden")
 
-        rerun = dict(fn=analyze_still, inputs=[source, still] + knobs,
+        rerun = dict(fn=analyze_still, inputs=[source, frame] + knobs,
                      outputs=outs, show_progress="hidden")
         for slider in (conf, top_k, score_thr):
             slider.release(**rerun)
@@ -482,7 +503,8 @@ def build_ui(runtime: dict | None = None):
                        js="(df) => window.aeExport('json', df)")
 
         # never open on an empty canvas: render the bundled sample
-        demo.load(analyze, [still] + knobs, outs, show_progress="hidden")
+        demo.load(load_sample, knobs, [still, frame] + outs,
+                  show_progress="hidden")
     return demo
 
 
