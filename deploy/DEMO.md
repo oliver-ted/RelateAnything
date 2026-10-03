@@ -36,7 +36,7 @@ opens empty. UI names map to the pipeline as follows:
 | UI | pipeline |
 |---|---|
 | Input: **Image** / **Camera** (segmented control) | upload vs live webcam stream (Image is better on CPU) |
-| **Objects to detect** | YOLOE text prompts (`set_object_classes`). Leave empty on the prompt-free checkpoint |
+| **Objects to detect** | YOLOE text prompts (`set_object_classes`). On the prompt-free `--det`, typing objects switches to the text-prompt sibling (`--det_text`, default: same path without `-pf`; preloaded at startup). Empty = back to prompt-free "detect anything" |
 | **Relationships to detect** | relation head vocabulary (`set_predicates`) |
 | **Apply** | re-parameterizes both; **neither box requires retraining** |
 | **Detection sensitivity** | detector confidence (`det_conf`, default 0.25) |

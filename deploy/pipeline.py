@@ -73,6 +73,10 @@ class PipelineConfig:
     # Applied at construction for text-prompt YOLOE, which otherwise has an
     # empty vocabulary and returns zero boxes. None = leave as-is (prompt-free).
     default_classes: Optional[Sequence[str]] = None
+    # Text-prompt detector to switch to when classes are set on a prompt-free
+    # ("-pf") checkpoint, which refuses set_classes by design (ultralytics
+    # asserts on its LRPC head). "" = the same path with "-pf" removed.
+    det_text_weights: str = ""
     # relation head — these are the STATIC shapes; shrinking them is the
     # single biggest compute reduction available for a webcam scene.
     ckpt: str = ("runs/train/sched_lr4e-4_ep8_r0_sig0.25_btd0.3_def4/"
@@ -187,6 +191,11 @@ class ParallelScenePipeline:
         # set_classes is called. The "-pf" prompt-free checkpoint is the one
         # that works out of the box — use it when no classes are supplied.
         self.prompt_free = "-pf" in cfg.det_weights
+        # Prompt-free start: set_object_classes switches to a lazily loaded
+        # text-prompt sibling, reset_object_classes switches back.
+        self._det_pf = self.det if self.prompt_free else None
+        self._det_text = None
+        self._det_lock = threading.Lock()
         self._det_classes: List[str] = list(self.det.names.values()) \
             if isinstance(self.det.names, dict) else list(self.det.names)
         if not self.prompt_free and cfg.default_classes:
@@ -286,15 +295,54 @@ class ParallelScenePipeline:
             torch.cuda.synchronize()
         return time.perf_counter() - t0
 
+    def _text_detector(self):
+        """The text-prompt detector, loaded once on first use (thread-safe)."""
+        with self._det_lock:
+            if self._det_text is None:
+                from ultralytics import YOLOE
+                w = self.cfg.det_text_weights or self.cfg.det_weights.replace(
+                    "-pf", "")
+                det = YOLOE(w)
+                det.to(str(self.device))
+                self._det_text = det
+            return self._det_text
+
+    def preload_text_detector(self, warm_classes: Sequence[str] = ("object",)):
+        """Load the text-prompt detector and its text encoder ahead of time,
+        so the first vocabulary change does not pay for downloads. Does not
+        change the active detector."""
+        if self._det_pf is None:
+            return
+        det = self._text_detector()
+        det.get_text_pe(list(warm_classes))
+
     def set_object_classes(self, names: Sequence[str]) -> "ParallelScenePipeline":
-        """Re-parameterize YOLOE to an arbitrary open-vocabulary class list."""
+        """Re-parameterize YOLOE to an arbitrary open-vocabulary class list.
+
+        On a prompt-free checkpoint this switches to the text-prompt detector
+        (the prompt-free head cannot take a class list)."""
         names = [n.strip() for n in names if n.strip()]
         if not names:
             raise ValueError("empty class list")
-        self.det.set_classes(names, self.det.get_text_pe(names))
-        self.det.to(str(self.device))
+        det = self._text_detector() if self._det_pf is not None else self.det
+        det.set_classes(names, det.get_text_pe(names))
+        det.to(str(self.device))
+        self.det = det
+        self.prompt_free = False
         self._det_classes = list(names)
         return self
+
+    def reset_object_classes(self) -> bool:
+        """Back to the prompt-free detector ("detect anything"), if this
+        pipeline started on one. Returns False when there is nothing to reset."""
+        if self._det_pf is None:
+            return False
+        self.det = self._det_pf
+        self.prompt_free = True
+        names = self.det.names
+        self._det_classes = (list(names.values()) if isinstance(names, dict)
+                             else list(names))
+        return True
 
     def set_predicates(self, names: Sequence[str]) -> "ParallelScenePipeline":
         """Re-parameterize the relation head to an arbitrary predicate list.
