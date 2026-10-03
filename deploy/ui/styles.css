@@ -327,6 +327,8 @@ footer, .gradio-container > footer, .built-with, .show-api { display: none !impo
 }
 .ae-empty__title { margin: 0 !important; font-size: var(--ae-fs-body) !important; font-weight: 600; color: var(--ae-text) !important; }
 .ae-empty__body { margin: var(--ae-space-half) 0 0 !important; font-size: var(--ae-fs-caption) !important; color: var(--ae-text-muted) !important; line-height: var(--ae-lh-body); }
+.ae-empty__detail { margin: var(--ae-space-1) 0 0 !important; font-size: 11px !important; color: var(--ae-text-subtle) !important; line-height: var(--ae-lh-body); word-break: break-word; }
+.ae-empty__detail code { font-size: 11px; background: none; padding: 0; color: inherit; }
 .ae-empty--error { background: var(--ae-danger-soft); border-color: color-mix(in srgb, var(--ae-danger) 35%, transparent); }
 .ae-empty--error .ae-empty__title { color: var(--ae-danger) !important; }
 .ae-empty--success { background: var(--ae-accent-soft); border-color: transparent; }

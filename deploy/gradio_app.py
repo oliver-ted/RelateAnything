@@ -27,6 +27,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 
 import cv2
 import numpy as np
@@ -40,6 +41,7 @@ from deploy.ui import branding                             # noqa: E402
 from deploy.ui.results import (TABLE_HEADERS, Metrics,     # noqa: E402
                                notice, object_name,
                                relationship_rows, status_strip)
+from deploy.ui.vocab_input import describe_error, parse_terms  # noqa: E402
 from deploy.ui.theme import (blocks_kwargs,                # noqa: E402
                              component_kwargs, launch_kwargs)
 
@@ -209,42 +211,71 @@ def analyze(frame_rgb, conf, top_k, score_thr, show_masks, show_labels, mode,
 
 
 def analyze_still(source, frame_rgb, *knobs):
-    """Re-run the still image after a knob change; no-op in camera mode."""
+    """Re-run the still image after a knob change; no-op in camera mode.
+
+    `frame_rgb` comes from server-side session state, not from the Image
+    component: re-reading the component makes Gradio reopen its temp-file
+    copy, which may no longer exist (it broke the hosted Space).
+    """
     if source != "Image":
         return (gr.update(),) * _NO_CHANGE
     return analyze(frame_rgb, *knobs)
+
+
+def analyze_input(frame_rgb, *knobs):
+    """New upload, paste or clear: remember the frame, then analyze it."""
+    return (frame_rgb,) + analyze(frame_rgb, *knobs)
+
+
+def load_sample(*knobs):
+    """Page load: show and analyze the bundled sample, straight from memory."""
+    frame = _load_sample()
+    return (frame, frame) + analyze(frame, *knobs)
 
 
 def mark_processing(metrics):
     return status_strip("processing", metrics)
 
 
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}{'s' if n != 1 else ''}"
+
+
 def apply_vocab(classes_txt, preds_txt):
-    """Re-target both vocabularies. Same calls as before; friendlier copy."""
+    """Re-target both vocabularies and report what actually happened.
+
+    Every failure is logged with its full traceback and shown in the page with
+    its real error text; nothing escapes to Gradio's generic error toast.
+    """
     if PIPE is None:
         return notice("info", "The model is still starting up",
                       "Try again in a moment.")
-    done, failed = [], []
+    done, errors = [], []
+    cls, prs = parse_terms(classes_txt), parse_terms(preds_txt)
     try:
-        cls = [c.strip() for c in classes_txt.replace("\n", ",").split(",") if c.strip()]
         if cls:
             PIPE.set_object_classes(cls)
-            done.append(f"{len(cls)} object{'s' if len(cls) != 1 else ''}")
-    except Exception:
-        log.exception("set_object_classes failed")
-        failed.append("objects")
+            done.append(_count(len(cls), "object"))
+        elif PIPE.reset_object_classes():
+            done.append("any object")
+    except Exception as e:
+        log.exception("set_object_classes failed for %r", cls)
+        errors.append(("objects", e))
     try:
-        prs = [p.strip() for p in preds_txt.replace("\n", ",").split(",") if p.strip()]
         if prs:
             PIPE.set_predicates(prs)
-            done.append(f"{len(prs)} relationship{'s' if len(prs) != 1 else ''}")
-    except Exception:
-        log.exception("set_predicates failed")
-        failed.append("relationships")
-    if failed:
-        return notice("error", f"Could not update {' and '.join(failed)}",
-                      "Check the list for typos and try again. Separate "
-                      "entries with commas or new lines.")
+            done.append(_count(len(prs), "relationship"))
+    except Exception as e:
+        log.exception("set_predicates failed for %r", prs)
+        errors.append(("relationships", e))
+    if errors:
+        what = " and ".join(name for name, _ in errors)
+        hint, detail = describe_error(errors[0][1])
+        if len(errors) > 1:
+            detail += f" | {describe_error(errors[1][1])[1]}"
+        updated = f" Updated: {' and '.join(done)}." if done else ""
+        return notice("error", f"Could not update {what}", hint + updated,
+                      detail=detail)
     if not done:
         return notice("info", "Nothing to apply",
                       "Add at least one object or relationship, then "
@@ -256,7 +287,8 @@ def apply_vocab(classes_txt, preds_txt):
 def _apply_busy():
     return (gr.update(value="Applying", interactive=False),
             notice("info", "Updating vocabulary",
-                   "This takes a few seconds."))
+                   "The first update can take up to a minute while models "
+                   "load."))
 
 
 def _apply_idle():
@@ -337,7 +369,6 @@ Relationship model: `{runtime.get("relation_model", "unknown")}`.
 def build_ui(runtime: dict | None = None):
     runtime = runtime or {}
     prompt_free = runtime.get("prompt_free", True)
-    sample = _load_sample()
 
     with gr.Blocks(**blocks_kwargs(f"{branding.PRODUCT_NAME} | "
                                    f"{branding.COMPANY_NAME}")) as demo:
@@ -365,8 +396,7 @@ def build_ui(runtime: dict | None = None):
                         source = gr.Radio(SOURCES, value="Image",
                                           show_label=False, container=False,
                                           elem_classes="ae-segmented")
-                        still = gr.Image(value=sample,
-                                         sources=["upload", "clipboard"],
+                        still = gr.Image(sources=["upload", "clipboard"],
                                          type="numpy", label="Image",
                                          show_label=False, height=240)
                         cam = gr.Image(sources=["webcam"], streaming=True,
@@ -452,13 +482,20 @@ def build_ui(runtime: dict | None = None):
         metrics = gr.State(None)
         outs = outputs + [metrics]
 
+        # The still image being analyzed, kept in session state so knob
+        # changes never depend on Gradio's temp file for the Image component.
+        frame = gr.State(None)
+
         cam.stream(analyze, [cam] + knobs, outs, stream_every=0.12,
                    concurrency_limit=1, show_progress="hidden")
-        still.change(mark_processing, [metrics], [status], queue=False,
-                     show_progress="hidden").then(
-            analyze, [still] + knobs, outs, show_progress="hidden")
+        # `input` fires on user upload/paste/clear only, not when load_sample
+        # sets the value, so the sample is not analyzed twice.
+        still.input(mark_processing, [metrics], [status], queue=False,
+                    show_progress="hidden").then(
+            analyze_input, [still] + knobs, [frame] + outs,
+            show_progress="hidden")
 
-        rerun = dict(fn=analyze_still, inputs=[source, still] + knobs,
+        rerun = dict(fn=analyze_still, inputs=[source, frame] + knobs,
                      outputs=outs, show_progress="hidden")
         for slider in (conf, top_k, score_thr):
             slider.release(**rerun)
@@ -482,7 +519,8 @@ def build_ui(runtime: dict | None = None):
                        js="(df) => window.aeExport('json', df)")
 
         # never open on an empty canvas: render the bundled sample
-        demo.load(analyze, [still] + knobs, outs, show_progress="hidden")
+        demo.load(load_sample, knobs, [still, frame] + outs,
+                  show_progress="hidden")
     return demo
 
 
@@ -492,6 +530,11 @@ def main():
     ap.add_argument("--det", default="checkpoints/detectors/yoloe-11m-seg-pf.pt",
                     help="'-pf' = prompt-free YOLOE (works with no class list); "
                          "yoloe-11m-seg.pt = text-prompt (needs classes set)")
+    ap.add_argument("--det_text", default="",
+                    help="text-prompt YOLOE used when objects are typed on a "
+                         "prompt-free --det (default: --det without '-pf')")
+    ap.add_argument("--no_preload", action="store_true",
+                    help="skip loading the text-prompt detector at startup")
     ap.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     ap.add_argument("--max_objects", type=int, default=16)
     ap.add_argument("--final_budget", type=int, default=64)
@@ -500,6 +543,8 @@ def main():
     ap.add_argument("--port", type=int, default=7860)
     ap.add_argument("--share", action="store_true")
     a = ap.parse_args()
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     import torch
     dev = a.device if (a.device == "cpu" or torch.cuda.is_available()) else "cpu"
@@ -512,12 +557,24 @@ def main():
                          max_objects=a.max_objects,
                          final_budget=a.final_budget,
                          overlap=(dev == "cuda" and not a.no_overlap),
-                         default_classes=None if prompt_free else DEFAULT_CLASSES)
+                         default_classes=None if prompt_free else DEFAULT_CLASSES,
+                         det_text_weights=a.det_text)
     print(f"[demo] loading pipeline on {dev} …")
     PIPE = ParallelScenePipeline(cfg)
     note = (f"Running on {dev.upper()}"
             + (" with detector‖backbone overlap." if cfg.overlap else "."))
     print(f"[demo] ready — {note}")
+    if prompt_free and not a.no_preload:
+        # Typing objects switches to the text-prompt detector; fetch it and its
+        # text encoder now so the first Apply does not wait on downloads.
+        def _preload():
+            try:
+                PIPE.preload_text_detector()
+                log.info("text-prompt detector ready")
+            except Exception:
+                log.exception("text-prompt detector preload failed; the first "
+                              "Apply with objects will retry and report it")
+        threading.Thread(target=_preload, daemon=True).start()
     runtime = {
         "device": dev.upper() + (", parallel detection and encoding"
                                  if cfg.overlap else ""),

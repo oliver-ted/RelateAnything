@@ -99,8 +99,12 @@ def status_strip(state: str, m: Optional[Metrics] = None,
     return f'<div class="ae-status" role="status">{"".join(parts)}</div>'
 
 
-def notice(kind: str, title: str, body: str = "") -> str:
-    """Inline empty/error/info state. kind: 'empty' | 'error' | 'info'."""
+def notice(kind: str, title: str, body: str = "", detail: str = "") -> str:
+    """Inline state. kind: 'empty' | 'error' | 'info' | 'success'.
+    `detail` is the technical error text, shown verbatim in a muted line."""
     body_html = f'<p class="ae-empty__body">{escape(body)}</p>' if body else ""
+    detail_html = (f'<p class="ae-empty__detail">Details: '
+                   f'<code>{escape(detail)}</code></p>' if detail else "")
     return (f'<div class="ae-empty ae-empty--{kind}">'
-            f'<p class="ae-empty__title">{escape(title)}</p>{body_html}</div>')
+            f'<p class="ae-empty__title">{escape(title)}</p>{body_html}'
+            f'{detail_html}</div>')
